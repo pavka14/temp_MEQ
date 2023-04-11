@@ -1,22 +1,6 @@
 """
 Run this from CLI as:
 python -c 'import meq; meq.run_exploration()'
-
-However, this cannot connect to the test server as it gets an SSL error:
-  File "/usr/lib64/python3.10/ssl.py", line 1342, in do_handshake
-    self._sslobj.do_handshake()
-
-Trying http (no SSL) fails differently:
-ib3.exceptions.MaxRetryError: HTTPConnectionPool(host='20.28.230.252', port=65432):
-Max retries exceeded with url: /3 (Caused by ProtocolError('Connection aborted.', BadStatusLine('A\n')))
-
-Trying directly from command line:
-curl http://20.28.230.252:65432
-curl: (1) Received HTTP/0.9 when not allowed
-
-curl https://20.28.230.252:65432 --> just times out.
-
-It seems that the server is GRPC but to connect to it, more information is needed.
 """
 
 import dataclasses
@@ -24,7 +8,7 @@ import random
 from abc import abstractmethod
 
 import graphviz
-import requests
+import socket
 
 EXPECTED_EDGE_VALUES = [1, 2, 3]
 
@@ -180,6 +164,10 @@ class BaseAccessFunction:
         pass
 
     @abstractmethod
+    def disconnect(self) -> None:
+        pass
+
+    @abstractmethod
     def query_current_node(self, label: int) -> str:
         pass
 
@@ -187,23 +175,25 @@ class BaseAccessFunction:
 class AccessFunction(BaseAccessFunction):
     def __init__(self, *args, **kwargs) -> None:
         # Start a session with the test server.
-        self.session = requests.session()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_address = (CONNECTION_IP, CONNECTION_PORT)
+        self.sock.connect(server_address)
         super().__init__(*args, **kwargs)
 
     def connect(self) -> str:
         # The first response from the server gives us the first node, without a specific request asking for it.
-        server_response = self.session.get(
-            f"https://{CONNECTION_IP}:{CONNECTION_PORT}", timeout=2, verify=False
-        )
-        return server_response.content
+        self.sock.send("".encode())
+        data = self.sock.recv(2)
+        return data.decode()
+
+    def disconnect(self) -> None:
+        self.sock.close()
 
     def query_current_node(self, label: int) -> str:
         # We cannot select which node to query - it is always the "current state" of the state machine.
         # We can only send it an edge label, which will get the state machine to transition to a new state.
-        server_response = self.session.get(
-            f"https://{CONNECTION_IP}:{CONNECTION_PORT}/{label}"
-        )
-        return server_response.content
+        data = self.sock.recv(1024)
+        return data.decode()
 
 
 def explore_graph(access_function: BaseAccessFunction) -> ExploredGraph:

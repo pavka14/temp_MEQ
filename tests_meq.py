@@ -88,6 +88,9 @@ class LocalAccessFunction(BaseAccessFunction):
         self.graph.current_state = self.graph.nodes[0]
         return self.graph.current_state.name
 
+    def disconnect(self) -> None:
+        pass
+
     def query_current_node(self, label: int) -> str:
         next_node = self.graph.current_state.get_edge_by_label(label)
         if next_node == self.last_node:
